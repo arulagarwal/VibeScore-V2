@@ -1,33 +1,24 @@
-# 🎵 Music Recommender Simulation
+# 🎵 Music Recommender Simulation: VibeScore 1.0 (Pro)
 
 ## Project Summary
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
-Replace this paragraph with your own summary of what your version does.
+VibeScore 1.0 is a classroom simulation of a content-based music recommender system. The goal of this project is to represent a catalog of songs and a user's "taste profile" as structured data, design a transparent, math-based scoring rule to generate personalized recommendations, and critically evaluate the biases and limitations of that algorithm.
 
 ---
 
 ## How The System Works
 
-Explain your design in plain language.
+Real-world music platforms like Spotify use two core approaches to generate recommendations. **Content-based filtering** analyzes the intrinsic properties of each song, while **collaborative filtering** mines the collective listening behavior of millions of users. 
 
-Some prompts to answer:
-
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
-
-You can include a simple diagram or bullet list if helpful.
+**This simulation focuses exclusively on the content-based layer:**
+* **Song Features:** Each song carries core attributes (genre, mood, energy) as well as complex attributes (popularity, release decade, acousticness, danceability, and detailed mood tags).
+* **User Profile:** Stores preference targets: `favorite_genre`, `favorite_mood`, and `target_energy`.
+* **Dynamic Scoring Modes:** The `Recommender` uses a Strategy pattern to allow users to switch weighting logic:
+  * **Balanced Mode:** +2.0 Genre, +1.0 Mood, +0-1.0 Energy.
+  * **Genre-First Mode:** +4.0 Genre, +1.0 Mood, +0-1.0 Energy.
+  * **Mood-First Mode:** +2.0 Genre, +3.0 Mood, +0-1.0 Energy.
+* **Diversity Penalty:** To prevent "filter bubbles" of a single artist, the ranking algorithm applies a strict **-1.0 penalty** to any song if its artist is already present higher up in the top recommendations. 
+* **Selection:** The system sorts the catalog by final score and returns the Top 5 results with generated "reasons" explaining the math.
 
 ---
 
@@ -35,177 +26,37 @@ You can include a simple diagram or bullet list if helpful.
 
 ### Setup
 
-1. Create a virtual environment (optional but recommended):
-
+1. Create a virtual environment:
    ```bash
    python -m venv .venv
    source .venv/bin/activate      # Mac or Linux
    .venv\Scripts\activate         # Windows
 
-2. Install dependencies
+    Install dependencies:
+    Bash
 
-```bash
-pip install -r requirements.txt
-```
+    pip install -r requirements.txt
 
-3. Run the app:
+    Run the app:
+    Bash
 
-```bash
-python -m src.main
-```
+    python -m src.main
 
-### Running Tests
+Experiments You Tried
 
-Run the starter tests with:
+To stress-test the dynamic strategies and the fairness logic, the "Chill Lofi" profile (genre=lofi, mood=chill, energy=0.35) was run through all three scoring modes. The output was formatted into an ASCII table using tabulate.
+Results Output:
 
-```bash
-pytest
-```
+Observation: The system successfully adjusted rankings based on the active mode. Furthermore, the Diversity Penalty correctly triggered on Focus Flow, penalizing it by -1.0 because its artist (LoRoom) was already recommended higher up in the list (via Midnight Coding). This successfully forced the system to present a wider variety of artists.
+Limitations and Risks
 
-You can add more tests in `tests/test_recommender.py`.
+    Rigid String Matching: The system does not understand semantic similarity. The mood tags "intense" and "aggressive" are treated as completely unrelated, leading to missed recommendations.
 
----
+    Tiny Catalog Bias: With only 20 songs, heavily weighting a specific feature (like in Genre-First mode) often forces the system to recommend a mathematically poor-fitting song simply because it's the only track available in that category.
 
-## Experiments You Tried
+For a deeper analysis, please read the full Model Card linked below.
+Reflection
 
-Use this section to document the experiments you ran. For example:
+Read the full Model Card here
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
-
----
-
-## Limitations and Risks
-
-Summarize some limitations of your recommender.
-
-Examples:
-
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
-
-You will go deeper on this in your model card.
-
----
-
-## Reflection
-
-Read and complete `model_card.md`:
-
-[**Model Card**](model_card.md)
-
-Write 1 to 2 paragraphs here about what you learned:
-
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
-
-
----
-
-## 7. `model_card_template.md`
-
-Combines reflection and model card framing from the Module 3 guidance. :contentReference[oaicite:2]{index=2}  
-
-```markdown
-# 🎧 Model Card - Music Recommender Simulation
-
-## 1. Model Name
-
-Give your recommender a name, for example:
-
-> VibeFinder 1.0
-
----
-
-## 2. Intended Use
-
-- What is this system trying to do
-- Who is it for
-
-Example:
-
-> This model suggests 3 to 5 songs from a small catalog based on a user's preferred genre, mood, and energy level. It is for classroom exploration only, not for real users.
-
----
-
-## 3. How It Works (Short Explanation)
-
-Describe your scoring logic in plain language.
-
-- What features of each song does it consider
-- What information about the user does it use
-- How does it turn those into a number
-
-Try to avoid code in this section, treat it like an explanation to a non programmer.
-
----
-
-## 4. Data
-
-Describe your dataset.
-
-- How many songs are in `data/songs.csv`
-- Did you add or remove any songs
-- What kinds of genres or moods are represented
-- Whose taste does this data mostly reflect
-
----
-
-## 5. Strengths
-
-Where does your recommender work well
-
-You can think about:
-- Situations where the top results "felt right"
-- Particular user profiles it served well
-- Simplicity or transparency benefits
-
----
-
-## 6. Limitations and Bias
-
-Where does your recommender struggle
-
-Some prompts:
-- Does it ignore some genres or moods
-- Does it treat all users as if they have the same taste shape
-- Is it biased toward high energy or one genre by default
-- How could this be unfair if used in a real product
-
----
-
-## 7. Evaluation
-
-How did you check your system
-
-Examples:
-- You tried multiple user profiles and wrote down whether the results matched your expectations
-- You compared your simulation to what a real app like Spotify or YouTube tends to recommend
-- You wrote tests for your scoring logic
-
-You do not need a numeric metric, but if you used one, explain what it measures.
-
----
-
-## 8. Future Work
-
-If you had more time, how would you improve this recommender
-
-Examples:
-
-- Add support for multiple users and "group vibe" recommendations
-- Balance diversity of songs instead of always picking the closest match
-- Use more features, like tempo ranges or lyric themes
-
----
-
-## 9. Personal Reflection
-
-A few sentences about what you learned:
-
-- What surprised you about how your system behaved
-- How did building this change how you think about real music recommenders
-- Where do you think human judgment still matters, even if the model seems "smart"
-
+Building VibeScore 1.0 made concrete something that is easy to take for granted in apps like music streaming platforms: a recommendation is not a guess, it is the output of a scoring function. The most interesting discovery was seeing how adding a simple mathematical rule—like subtracting 1.0 point for a repeat artist—instantly made the playlist feel more human and less like a database query. It showed me how algorithmic fairness (like diversity) has to be explicitly programmed into the system, or the math will naturally create repetitive filter bubbles.
