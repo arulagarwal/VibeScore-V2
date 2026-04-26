@@ -147,7 +147,7 @@ The test suite covers the VibeScore 1.0 scoring and recommendation logic in `src
 ---
 
 ## Architecture Decisions
-
+![System Architecture](assets/architecture.png)
 **Why ChromaDB over keyword scoring?**
 VibeScore 1.0's scoring loop required exact string matches for genre and mood. A user asking for "something melancholic and cinematic" would score zero against the `mood=moody` tag. ChromaDB with `text-embedding-004` embeddings maps both the query and the song metadata into the same vector space, so semantic proximity drives retrieval instead of string equality.
 

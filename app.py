@@ -74,8 +74,22 @@ if prompt := st.chat_input("Tell me what kind of music you're feeling..."):
     history = st.session_state.messages[:-1]
 
     with st.chat_message("assistant"):
-        with st.spinner("Finding your vibe..."):
-            reply, retrieved_songs, is_clean = st.session_state.agent.chat(prompt, history)
+        with st.status("Curating your playlist...", expanded=True) as status:
+            st.write("🔎 Step 1 — Semantic retrieval (ChromaDB)...")
+            retrieved_songs = st.session_state.agent.knowledge_base.retrieve(
+                prompt,
+                k=st.session_state.agent.mode.retrieval_k,
+                diversity_penalty=st.session_state.agent.mode.diversity_penalty,
+            )
+
+            st.write("🧠 Step 2 — Gemini 3.0 Flash planning playlist...")
+            reply, is_clean = st.session_state.agent.chat(
+                prompt, history, prefetched_songs=retrieved_songs
+            )
+
+            st.write("🛡️ Step 3 — HallucinationGuardrail validating titles...")
+            status.update(label="Playlist ready", state="complete", expanded=False)
+
         st.markdown(reply)
 
         with st.expander("🔍 Developer Debug Info"):

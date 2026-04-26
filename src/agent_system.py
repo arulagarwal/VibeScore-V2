@@ -1,3 +1,4 @@
+import csv
 import os
 import re
 from abc import ABC, abstractmethod
@@ -9,13 +10,13 @@ from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
-try:
-    from recommender import load_songs
-except ImportError:
-    from src.recommender import load_songs
-
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _DEFAULT_CSV = os.path.join(_HERE, '..', 'data', 'songs.csv')
+
+
+def load_songs(csv_path: str) -> List[Dict]:
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        return list(csv.DictReader(f))
 
 
 # ── GuardrailResult ───────────────────────────────────────────────────────────
@@ -244,17 +245,28 @@ class VibeScoreAgent:
         self.mode = mode
         self._guardrail = HallucinationGuardrail()
 
-    def chat(self, user_message: str, history: List[Dict]) -> tuple:
+    def chat(
+        self,
+        user_message: str,
+        history: List[Dict],
+        prefetched_songs: List[Dict] = None,
+    ) -> tuple:
         """
-        Full RAG pipeline:
-        1. Retrieve top-k songs via Chroma similarity search
-        2. Build augmented system prompt with catalog context
-        3. Invoke Gemini via LangChain
-        4. Validate response through hallucination guardrail
-        5. Return (safe_response, retrieved_songs, is_clean)
+        RAG pipeline. Returns (response_text, is_clean).
+
+        If prefetched_songs is provided, the retrieval step is skipped and the
+        provided songs are used as the catalog context — this lets the caller
+        (e.g. the Streamlit UI) run retrieval inside an observable status block
+        and pass the results in.
         """
-        retrieved = self.knowledge_base.retrieve(
-            user_message, k=self.mode.retrieval_k, diversity_penalty=self.mode.diversity_penalty
+        retrieved = (
+            prefetched_songs
+            if prefetched_songs is not None
+            else self.knowledge_base.retrieve(
+                user_message,
+                k=self.mode.retrieval_k,
+                diversity_penalty=self.mode.diversity_penalty,
+            )
         )
         catalog_context = self._format_catalog(retrieved)
         full_system = f"{self.mode.system_prompt}\n\nCATALOG CONTEXT:\n{catalog_context}"
@@ -269,7 +281,7 @@ class VibeScoreAgent:
 
         response = self._llm.invoke(messages)
         result = self._guardrail.validate(response.content, self.knowledge_base)
-        return result.safe_response, retrieved, result.is_clean
+        return result.safe_response, result.is_clean
 
     def _format_catalog(self, songs: List[Dict]) -> str:
         lines = []

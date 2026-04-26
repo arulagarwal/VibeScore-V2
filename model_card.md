@@ -161,3 +161,68 @@ VibeScore 1.0 taught me that a recommendation is not a guess — it is a scoring
 When the math awarded +2.0 for a genre match, I could point to the line. When Gemini curates a playlist, I cannot. The system is more capable — it understands "cinematic late-night energy" in a way that `mood == "cinematic"` never could — but the reasoning is implicit. The guardrail and diversity penalty are not just features; they are my attempt to put some of that legibility back. They are the parts of the system I can still read and reason about.
 
 The stack correction also left an impression. The first version I received used Anthropic's SDK. It compiled and ran. It produced recommendations. But it was not doing what I asked — it was doing a keyword sort and calling it RAG. Recognizing that difference, and being precise enough about it to get a correct rewrite, is a skill that matters as much as knowing how to write the code in the first place.
+
+---
+
+## 9. Biases & Limitations
+
+A recommendation system is never neutral. Every layer of VibeScore 2.0 — the catalog, the embedding model, the LLM, the diversity heuristic — encodes a perspective and produces predictable failure modes. Section 4 documented the *guardrail* mechanisms; this section documents what the guardrails *cannot* catch.
+
+### Catalog Bias — The 20-Song Problem
+
+The catalog is a 20-song hand-curated CSV. It was assembled to exhibit *variety* across 14 genres, not to reflect realistic listening distributions. This produces a structural bias: **genre-sparse queries surface trivial matches**.
+
+Concretely:
+- The metal genre is represented by exactly one song (*Iron Curtain*). Any query that mentions "metal," "heavy," or "headbanging" will retrieve *Iron Curtain* whether or not the rest of the prompt fits — there is no second metal song for the embeddings to discriminate between, so similarity scores collapse.
+- The 1990s decade has a single representative (*Velvet Underground*). A user asking for "90s soul" gets *Velvet Underground* by default, not because it's the best fit but because it's the only fit.
+- Several genres (classical, country, reggae, dream pop, darkwave) each have one song, meaning the system silently behaves as a lookup table rather than a recommender for those queries.
+
+The system has no way to express "I don't have a good match for this." Retrieval will always return *k* songs, and the LLM will always write confident copy about them. A user asking for death metal will get *Iron Curtain* described as if the catalog had carefully selected it, when in reality there was nothing else to return.
+
+**What this means in practice:** the recommendations are most trustworthy when the user's query intersects a well-represented region of the catalog (lofi, pop, electronic) and least trustworthy at the edges. A production version would need either (a) a much larger catalog, (b) a confidence threshold that surfaces "no good match" rather than always returning *k*, or (c) explicit per-genre coverage warnings in the UI.
+
+### Embedding Bias — `text-embedding-004` Is Not Culturally Neutral
+
+The retrieval layer uses Google's `text-embedding-004` model. Like every contemporary embedding model, its training corpus is overwhelmingly English-language and Western-centric, which has direct consequences for what "semantic similarity" means inside this system.
+
+Specific failure modes I expect:
+- **Non-English mood vocabulary collapses.** Concepts that English handles with multiple distinct words (e.g., the Portuguese *saudade*, the German *Sehnsucht*, the Japanese *mono no aware*) will likely embed near a generic "melancholic / nostalgic" cluster rather than retrieving songs whose moods carry those specific cultural shadings — even if the catalog had such songs (it does not).
+- **Genre label asymmetry.** "Lofi" and "synthwave" — internet-native, English-dominant subcultures — have rich embedding neighborhoods. "Reggaeton," "K-pop," "Afrobeats," and regional folk genres are embedded but with less internal differentiation, which means a query like "upbeat reggaeton" may not distinguish well between actual reggaeton tracks and other Latin-genre adjacent music.
+- **Cultural reference rot.** Phrases like "music for a dharma talk" or "ghazal vibes" depend on cultural context the embedding model under-represents. Similarity scores in those query regions are noisier and less meaningful.
+
+The catalog itself amplifies this — every song title and tag in `songs.csv` is in English. Even if `text-embedding-004` had perfectly balanced cross-lingual representations, the documents being retrieved would still be culturally narrow. The two biases compound rather than cancel.
+
+### LLM Popularity Bias — Gemini Wants to Recommend Famous Artists
+
+Gemini 3.0 Flash was trained on a corpus where Taylor Swift, The Beatles, Drake, Beyoncé, Kendrick Lamar, and a few hundred other globally famous artists appear orders of magnitude more often than any artist in this catalog. This creates a statistical pressure that runs *against* the system's design intent.
+
+**The pressure manifests in two ways:**
+
+1. **Off-catalog recommendations.** When asked for "something like Radiohead" or "songs in the spirit of Mitski," Gemini's prior wants to surface those exact artists or close adjacents — none of which exist in our 20-song catalog. The system prompt explicitly forbids this ("ONLY recommend songs explicitly listed in the CATALOG CONTEXT"), but the prompt is fighting a strong base-rate prior.
+2. **Subtle title drift.** Even when grounded, Gemini may slightly misremember a catalog title — rendering *Velvet Underground* (the song in our catalog by Crimson Tide) as *"The Velvet Underground"* (the famous band) because the famous form is far more probable in its training distribution.
+
+**The HallucinationGuardrail is the only thing preventing this from reaching the user.** That is not a comfortable place to stand. The guardrail is a regex over quoted/bolded strings — it catches the obvious case where Gemini fabricates a title in the prescribed format, but:
+- A response that *describes* a non-catalog song without quoting its title (e.g., "consider that one Radiohead track from In Rainbows about heartbreak") passes through undetected.
+- A response that recommends a real catalog title but attributes it to the famous artist rather than the catalog artist also passes (the title matches `valid_titles`; the guardrail does not check artist).
+- The 8-word filter for "plausible song title" is a heuristic; pathological cases can be constructed that exploit it.
+
+In other words: the guardrail catches the *easy* hallucinations. The hard ones — confident, grammatically blended, partially-grounded — are still the user's burden to spot. The system is honest about this in its appended warning note, but a more rigorous approach would parse Gemini's response into structured `(title, artist)` pairs and validate both fields against the catalog.
+
+### Feedback Loop Bias — The Diversity Penalty Is Artist-Only
+
+The greedy diversity re-ranker in `SongKnowledgeBase.retrieve()` enforces exactly one constraint: **no repeated artists** within a returned playlist. Everything else is left to whatever distribution the embedding model produces.
+
+This is a meaningful but narrow guarantee. The penalty does **not** address:
+
+- **Genre clustering.** A "chill study music" query in Deep Dive mode will pull *Midnight Coding* (LoRoom, lofi), *Library Rain* (Paper Lanterns, lofi), *Focus Flow* (LoRoom, lofi), *Coffee Shop Stories* (Slow Stereo, jazz), *Pastel Morning* (Haze Garden, dream pop). With the artist-diversity penalty, LoRoom's two tracks no longer both appear — but the playlist is still 3 lofi songs out of 5. The genre balance the user might want is not enforced.
+- **Decade clustering.** 16 of 20 songs are from the 2020s. Almost every playlist will be implicitly recency-biased; a query for "nostalgic music" might surface 2020s songs *about* nostalgia rather than older songs that are nostalgic by virtue of being from another era. The penalty does nothing about this.
+- **Energy / valence clustering.** A high-energy query can return a playlist where every song sits at energy ≥ 0.85, producing a flat emotional arc. The Deep Dive system prompt asks Gemini to *describe* an emotional arc, but retrieval does not enforce one.
+- **Popularity / obscurity clustering.** The catalog has a `popularity` field that is currently unused by the retrieval layer.
+
+The artist-only design was deliberate — it ports the original VibeScore 1.0 `-1.0` penalty exactly, and adding genre/decade penalties would require choosing weights, which reintroduces the kind of hand-tuning the V2.0 architecture was meant to move away from. But it is worth being explicit: **"diverse" in this system means "no repeated artists" and nothing more.** A playlist can be monolithic across every other dimension and still pass.
+
+### Composite Effect
+
+These four biases are not independent. The catalog's English-only metadata amplifies the embedding model's Western bias. The LLM's popularity bias is most dangerous precisely when the catalog is sparse in the queried genre, because the temptation to fill the gap with famous off-catalog artists is highest. The artist-only diversity penalty cannot compensate for any of the other three.
+
+The system is honest, grounded, and reasonably safe within its design envelope. Outside that envelope — niche genres, non-English queries, prompts that probe at famous artists — its failure modes are predictable, and the user should know what they are.
