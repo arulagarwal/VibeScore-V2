@@ -57,15 +57,52 @@ class SongKnowledgeBase:
             documents.append(Document(page_content=text, metadata={"title": s['title']}))
         return Chroma.from_documents(documents, self._embeddings)
 
-    def retrieve(self, query: str, k: int) -> List[Dict]:
-        """Return the top-k songs most semantically relevant to the query."""
-        docs = self._vectorstore.similarity_search(query, k=k)
+    def retrieve(self, query: str, k: int, diversity_penalty: bool = False) -> List[Dict]:
+        """Return the top-k songs most semantically relevant to the query.
+
+        When diversity_penalty=True, applies a greedy artist-diversity re-ranking
+        (mirrors the _select_with_diversity logic from the original VibeScore 1.0).
+        """
         title_to_song = {s['title'].lower(): s for s in self._songs}
-        return [
-            title_to_song[doc.metadata['title'].lower()]
-            for doc in docs
+
+        if not diversity_penalty:
+            docs = self._vectorstore.similarity_search(query, k=k)
+            return [
+                title_to_song[doc.metadata['title'].lower()]
+                for doc in docs
+                if doc.metadata['title'].lower() in title_to_song
+            ]
+
+        # Fetch a wider pool so the diversity loop has enough candidates to choose from.
+        fetch_k = min(k * 3, len(self._songs))
+        docs_with_scores = self._vectorstore.similarity_search_with_relevance_scores(query, k=fetch_k)
+
+        candidates = [
+            (title_to_song[doc.metadata['title'].lower()], score)
+            for doc, score in docs_with_scores
             if doc.metadata['title'].lower() in title_to_song
         ]
+
+        # Greedy re-ranking: at each step subtract the penalty from every candidate
+        # whose artist already appears in the selected set, then re-sort.
+        _DIVERSITY_PENALTY = 1.0
+        selected: List[Dict] = []
+        seen_artists: set = set()
+        remaining = list(candidates)
+
+        while remaining and len(selected) < k:
+            adjusted = [
+                (song, score - (_DIVERSITY_PENALTY if song.get('artist') in seen_artists else 0.0))
+                for song, score in remaining
+            ]
+            adjusted.sort(key=lambda x: x[1], reverse=True)
+            best_song, _ = adjusted[0]
+            selected.append(best_song)
+            seen_artists.add(best_song.get('artist'))
+            best_title = best_song.get('title')
+            remaining = [(s, sc) for s, sc in remaining if s.get('title') != best_title]
+
+        return selected
 
     @property
     def all_songs(self) -> List[Dict]:
@@ -111,7 +148,7 @@ class HallucinationGuardrail:
 # ── Strategy Pattern ──────────────────────────────────────────────────────────
 
 class ScoringModeConfig(ABC):
-    """Abstract base: each mode configures system prompt and retrieval depth."""
+    """Abstract base: each mode configures system prompt, retrieval depth, and diversity."""
 
     @property
     @abstractmethod
@@ -124,6 +161,10 @@ class ScoringModeConfig(ABC):
     @property
     @abstractmethod
     def retrieval_k(self) -> int: ...
+
+    @property
+    def diversity_penalty(self) -> bool:
+        return False
 
 
 class BalancedMode(ScoringModeConfig):
@@ -161,6 +202,10 @@ class DeepDiveMode(ScoringModeConfig):
     @property
     def retrieval_k(self) -> int:
         return 10
+
+    @property
+    def diversity_penalty(self) -> bool:
+        return True
 
     @property
     def system_prompt(self) -> str:
@@ -208,7 +253,9 @@ class VibeScoreAgent:
         4. Validate response through hallucination guardrail
         5. Return safe response
         """
-        retrieved = self.knowledge_base.retrieve(user_message, k=self.mode.retrieval_k)
+        retrieved = self.knowledge_base.retrieve(
+            user_message, k=self.mode.retrieval_k, diversity_penalty=self.mode.diversity_penalty
+        )
         catalog_context = self._format_catalog(retrieved)
         full_system = f"{self.mode.system_prompt}\n\nCATALOG CONTEXT:\n{catalog_context}"
 
