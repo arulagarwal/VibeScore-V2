@@ -1,5 +1,9 @@
-anthropic
+chromadb
+langchain-community
+langchain-google-genai
 pandas
+pypdf
 pytest
+python-dotenv
 streamlit
 tabulate

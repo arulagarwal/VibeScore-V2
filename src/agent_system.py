@@ -4,7 +4,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Dict
 
-import anthropic
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
 try:
     from recommender import load_songs
@@ -27,34 +30,42 @@ class GuardrailResult:
 # ── SongKnowledgeBase ─────────────────────────────────────────────────────────
 
 class SongKnowledgeBase:
-    """RAG data layer: loads the song catalog and handles retrieval."""
+    """RAG data layer: embeds the song catalog into Chroma and handles vector retrieval."""
 
-    def __init__(self, csv_path: str = _DEFAULT_CSV):
+    def __init__(self, api_key: str, csv_path: str = _DEFAULT_CSV):
         self._songs: List[Dict] = load_songs(csv_path)
-        # Lowercase set used by the guardrail as ground truth
         self.valid_titles: set = {s['title'].lower() for s in self._songs}
+        self._embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/text-embedding-004",
+            google_api_key=api_key,
+        )
+        self._vectorstore = self.ingest_catalog()
+
+    def ingest_catalog(self) -> Chroma:
+        """Convert CSV rows into text documents and load them into a Chroma vector store."""
+        documents = []
+        for s in self._songs:
+            text = (
+                f"Title: {s['title']} | Artist: {s['artist']} | "
+                f"Genre: {s['genre']} | Mood: {s['mood']} | "
+                f"Energy: {s['energy']} | Valence: {s.get('valence', 'N/A')} | "
+                f"Danceability: {s.get('danceability', 'N/A')} | "
+                f"Acousticness: {s.get('acousticness', 'N/A')} | "
+                f"Tempo: {s.get('tempo_bpm', 'N/A')} BPM | "
+                f"Tags: {s.get('mood_tags', '')}"
+            )
+            documents.append(Document(page_content=text, metadata={"title": s['title']}))
+        return Chroma.from_documents(documents, self._embeddings)
 
     def retrieve(self, query: str, k: int) -> List[Dict]:
-        """Return the top-k songs most relevant to a natural-language query."""
-        query_lower = query.lower()
-        scored = []
-        for song in self._songs:
-            score = 0
-            if song.get('genre', '').lower() in query_lower:
-                score += 3
-            if song.get('mood', '').lower() in query_lower:
-                score += 2
-            for tag in str(song.get('mood_tags', '')).lower().split(','):
-                if tag.strip() and tag.strip() in query_lower:
-                    score += 1
-            energy = float(song.get('energy', 0.5))
-            if energy >= 0.75 and any(w in query_lower for w in ('energetic', 'high energy', 'upbeat', 'intense', 'pump', 'hype')):
-                score += 1
-            if energy <= 0.4 and any(w in query_lower for w in ('calm', 'chill', 'relax', 'low energy', 'soft', 'quiet', 'peaceful')):
-                score += 1
-            scored.append((song, score))
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [s for s, _ in scored[:k]]
+        """Return the top-k songs most semantically relevant to the query."""
+        docs = self._vectorstore.similarity_search(query, k=k)
+        title_to_song = {s['title'].lower(): s for s in self._songs}
+        return [
+            title_to_song[doc.metadata['title'].lower()]
+            for doc in docs
+            if doc.metadata['title'].lower() in title_to_song
+        ]
 
     @property
     def all_songs(self) -> List[Dict]:
@@ -170,7 +181,7 @@ class DeepDiveMode(ScoringModeConfig):
 
 class VibeScoreAgent:
     """
-    Central orchestrator: retrieves grounded context, calls Claude,
+    Central orchestrator: retrieves grounded context, calls Gemini,
     and validates the response through the hallucination guardrail.
     """
 
@@ -180,7 +191,10 @@ class VibeScoreAgent:
         knowledge_base: SongKnowledgeBase,
         mode: ScoringModeConfig,
     ):
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key=api_key,
+        )
         self.knowledge_base = knowledge_base
         self.mode = mode
         self._guardrail = HallucinationGuardrail()
@@ -188,38 +202,26 @@ class VibeScoreAgent:
     def chat(self, user_message: str, history: List[Dict]) -> str:
         """
         Full RAG pipeline:
-        1. Retrieve top-k songs relevant to the user message
+        1. Retrieve top-k songs via Chroma similarity search
         2. Build augmented system prompt with catalog context
-        3. Call Claude API (with prompt caching on the static system prompt)
+        3. Invoke Gemini via LangChain
         4. Validate response through hallucination guardrail
         5. Return safe response
         """
         retrieved = self.knowledge_base.retrieve(user_message, k=self.mode.retrieval_k)
         catalog_context = self._format_catalog(retrieved)
+        full_system = f"{self.mode.system_prompt}\n\nCATALOG CONTEXT:\n{catalog_context}"
 
-        # Static system prompt is cached; dynamic catalog context is not
-        system = [
-            {
-                "type": "text",
-                "text": self.mode.system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            },
-            {
-                "type": "text",
-                "text": f"CATALOG CONTEXT:\n{catalog_context}",
-            },
-        ]
+        messages = [SystemMessage(content=full_system)]
+        for msg in history:
+            if msg["role"] == "user":
+                messages.append(HumanMessage(content=msg["content"]))
+            elif msg["role"] == "assistant":
+                messages.append(AIMessage(content=msg["content"]))
+        messages.append(HumanMessage(content=user_message))
 
-        messages = list(history) + [{"role": "user", "content": user_message}]
-
-        response = self._client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=system,
-            messages=messages,
-        )
-        raw_text = response.content[0].text
-        result = self._guardrail.validate(raw_text, self.knowledge_base)
+        response = self._llm.invoke(messages)
+        result = self._guardrail.validate(response.content, self.knowledge_base)
         return result.safe_response
 
     def _format_catalog(self, songs: List[Dict]) -> str:

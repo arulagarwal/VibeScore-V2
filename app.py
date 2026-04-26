@@ -13,15 +13,15 @@ from agent_system import (
 
 st.set_page_config(page_title="VibeScore 2.0", page_icon="🎵", layout="centered")
 st.title("VibeScore 2.0")
-st.caption("Agentic music recommendations powered by Claude")
+st.caption("Agentic music recommendations powered by Gemini")
 
 # ── API Key Gate ──────────────────────────────────────────────────────────────
 if "api_key" not in st.session_state:
     st.session_state.api_key = ""
 
 if not st.session_state.api_key:
-    st.subheader("Enter your Anthropic API Key to get started")
-    key_input = st.text_input("API Key", type="password", placeholder="sk-ant-...")
+    st.subheader("Enter your Gemini API Key to get started")
+    key_input = st.text_input("Gemini API Key", type="password", placeholder="AIza...")
     if st.button("Start Chatting", type="primary") and key_input.strip():
         st.session_state.api_key = key_input.strip()
         st.rerun()
@@ -48,7 +48,7 @@ with st.sidebar:
 
 # ── Initialize Agent (once per session, or when mode changes) ─────────────────
 if "agent" not in st.session_state or st.session_state.get("active_mode") != selected_mode_name:
-    kb = SongKnowledgeBase()
+    kb = SongKnowledgeBase(api_key=st.session_state.api_key)
     st.session_state.agent = VibeScoreAgent(
         api_key=st.session_state.api_key,
         knowledge_base=kb,
