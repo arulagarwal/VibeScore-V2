@@ -75,7 +75,32 @@ if prompt := st.chat_input("Tell me what kind of music you're feeling..."):
 
     with st.chat_message("assistant"):
         with st.spinner("Finding your vibe..."):
-            reply = st.session_state.agent.chat(prompt, history)
+            reply, retrieved_songs, is_clean = st.session_state.agent.chat(prompt, history)
         st.markdown(reply)
+
+        with st.expander("🔍 Developer Debug Info"):
+            st.subheader("ChromaDB Retrieval")
+            st.caption(
+                f"Mode: **{st.session_state.active_mode}** | "
+                f"k={st.session_state.agent.mode.retrieval_k} | "
+                f"Diversity penalty: {st.session_state.agent.mode.diversity_penalty}"
+            )
+            for i, song in enumerate(retrieved_songs, 1):
+                st.markdown(
+                    f"**{i}. {song['title']}** by {song['artist']}  \n"
+                    f"Genre: `{song['genre']}` | Mood: `{song['mood']}` | "
+                    f"Energy: `{song['energy']}` | Valence: `{song.get('valence', 'N/A')}` | "
+                    f"Danceability: `{song.get('danceability', 'N/A')}` | "
+                    f"Acousticness: `{song.get('acousticness', 'N/A')}` | "
+                    f"Tempo: `{song.get('tempo_bpm', 'N/A')} BPM`  \n"
+                    f"Tags: `{song.get('mood_tags', 'N/A')}`"
+                )
+
+            st.divider()
+            st.subheader("HallucinationGuardrail")
+            if is_clean:
+                st.success("PASS — All referenced titles verified against songs.csv")
+            else:
+                st.warning("FLAGGED — Response contained unverified title references. Warning note appended.")
 
     st.session_state.messages.append({"role": "assistant", "content": reply})

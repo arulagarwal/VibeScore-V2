@@ -244,14 +244,14 @@ class VibeScoreAgent:
         self.mode = mode
         self._guardrail = HallucinationGuardrail()
 
-    def chat(self, user_message: str, history: List[Dict]) -> str:
+    def chat(self, user_message: str, history: List[Dict]) -> tuple:
         """
         Full RAG pipeline:
         1. Retrieve top-k songs via Chroma similarity search
         2. Build augmented system prompt with catalog context
         3. Invoke Gemini via LangChain
         4. Validate response through hallucination guardrail
-        5. Return safe response
+        5. Return (safe_response, retrieved_songs, is_clean)
         """
         retrieved = self.knowledge_base.retrieve(
             user_message, k=self.mode.retrieval_k, diversity_penalty=self.mode.diversity_penalty
@@ -269,7 +269,7 @@ class VibeScoreAgent:
 
         response = self._llm.invoke(messages)
         result = self._guardrail.validate(response.content, self.knowledge_base)
-        return result.safe_response
+        return result.safe_response, retrieved, result.is_clean
 
     def _format_catalog(self, songs: List[Dict]) -> str:
         lines = []
