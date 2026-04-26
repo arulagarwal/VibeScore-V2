@@ -192,7 +192,7 @@ class VibeScoreAgent:
         mode: ScoringModeConfig,
     ):
         self._llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
+            model="gemini-3.0-flash",
             google_api_key=api_key,
         )
         self.knowledge_base = knowledge_base
