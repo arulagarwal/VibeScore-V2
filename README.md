@@ -142,7 +142,7 @@ The test suite covers the VibeScore 1.0 scoring and recommendation logic in `src
 
 ## Loom Walkthrough
 
-> **[Add Loom link here]**
+> [**\[Walkthrough link\]**](https://www.loom.com/share/9062faa07ddc451eb5b5bd59f2adb0f5)
 
 ---
 
