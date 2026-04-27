@@ -37,7 +37,7 @@ class SongKnowledgeBase:
         self._songs: List[Dict] = load_songs(csv_path)
         self.valid_titles: set = {s['title'].lower() for s in self._songs}
         self._embeddings = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             google_api_key=api_key,
         )
         self._vectorstore = self.ingest_catalog()
