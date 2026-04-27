@@ -238,7 +238,7 @@ class VibeScoreAgent:
         mode: ScoringModeConfig,
     ):
         self._llm = ChatGoogleGenerativeAI(
-            model="gemini-3.0-flash",
+            model="gemini-3-flash-preview",
             google_api_key=api_key,
         )
         self.knowledge_base = knowledge_base
@@ -280,7 +280,13 @@ class VibeScoreAgent:
         messages.append(HumanMessage(content=user_message))
 
         response = self._llm.invoke(messages)
-        result = self._guardrail.validate(response.content, self.knowledge_base)
+        
+        # Ensure the content is a string (handles list-type responses)
+        response_text = response.content
+        if isinstance(response_text, list):
+            response_text = " ".join([part.get("text", "") if isinstance(part, dict) else str(part) for part in response_text])
+        
+        result = self._guardrail.validate(response_text, self.knowledge_base)
         return result.safe_response, result.is_clean
 
     def _format_catalog(self, songs: List[Dict]) -> str:

@@ -146,6 +146,24 @@ The test suite covers the VibeScore 1.0 scoring and recommendation logic in `src
 
 ---
 
+## 🖼️ System in Action
+
+### 1. Secure Onboarding
+![API Gate](assets/screenshot_onboarding.png)
+*Figure 1: Gemini API Key gate for secure sessions.*
+
+### 2. Semantic Search & Observability
+![Balanced Mode](assets/screenshot_balanced.png)
+*Figure 2: Multi-step observable workflow and natural language interaction.*
+
+### 3. Deep Dive & Debugging
+![Debug Info](assets/screenshot_debug.jpg)
+*Figure 3: Full transparency into ChromaDB retrieval and attribute analysis.*
+
+### 4. Reliability Guardrail
+![Guardrail Note](assets/screenshot_guardrail.jpg)
+*Figure 4: Automated conflict detection against the songs.csv ground truth.*
+
 ## Architecture Decisions
 ![System Architecture](assets/architecture.png)
 **Why ChromaDB over keyword scoring?**
