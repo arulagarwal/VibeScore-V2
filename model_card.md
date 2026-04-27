@@ -4,7 +4,7 @@
 
 **Name:** VibeScore 2.0
 **Base project:** VibeScore 1.0 (Module 3) — rule-based, CLI, math-only scoring
-**This version:** Agentic RAG system — Gemini 3.0 Flash + ChromaDB + Streamlit chat UI
+**This version:** Agentic RAG system — Gemini 3 Flash (Preview) + ChromaDB + Streamlit chat UI
 **Author:** Arul Agarwal
 
 ---
@@ -34,9 +34,9 @@ The weights differed by mode (Balanced, Genre-First, Mood-First), but the underl
 VibeScore 2.0 replaces the scoring loop with a two-stage pipeline:
 
 **Stage 1 — Semantic Retrieval (ChromaDB)**
-At startup, every song in `songs.csv` is serialized into a text document containing all 12 attributes and embedded using Google's `text-embedding-004` model. When the user sends a message, that query is embedded in the same vector space and a cosine similarity search returns the top-k most relevant songs. "Melancholic and cinematic" will retrieve *Neon Noir* (darkwave, moody, haunting tags) because the embeddings capture semantic proximity — not because a tag matched exactly.
+At startup, every song in `songs.csv` is serialized into a text document containing all 12 attributes and embedded using Google's `gemini-embedding-001` model. When the user sends a message, that query is embedded in the same vector space and a cosine similarity search returns the top-k most relevant songs. "Melancholic and cinematic" will retrieve *Neon Noir* (darkwave, moody, haunting tags) because the embeddings capture semantic proximity — not because a tag matched exactly.
 
-**Stage 2 — LLM Reasoning (Gemini 3.0 Flash)**
+**Stage 2 — LLM Reasoning (Gemini 3 Flash (Preview))**
 The retrieved songs are injected as a `CATALOG CONTEXT` block into the system prompt. Gemini reads the real song data — valence, danceability, acousticness, tempo, mood tags — and reasons about them in natural language, explaining the emotional arc of the playlist rather than printing a score table.
 
 ### Trade-offs
@@ -98,7 +98,7 @@ The catalog is `data/songs.csv` — 20 songs, hand-curated for variety across 14
 This same file serves three roles in the system:
 - **Ingestion source** for ChromaDB embeddings (via `SongKnowledgeBase.ingest_catalog()`)
 - **Ground truth** for the `HallucinationGuardrail`'s `valid_titles` set
-- **Legacy input** for the VibeScore 1.0 scoring logic still exercised by the test suite
+- Legacy reference for documenting the lineage from VibeScore 1.0; no V1.0 code is shipped in this repository.
 
 Because it was assembled to cover a wide variety of genres rather than to reflect actual listening patterns, the catalog does not represent real-world popularity distributions. Genre-sparse queries (e.g., "metal") will surface the single available song in that category regardless of how well it fits.
 
@@ -144,7 +144,7 @@ Claude's first implementation used the Anthropic SDK (`anthropic.Anthropic()`) a
 - **Wrong AI provider:** The spec required Google Gemini, not Anthropic.
 - **Not a true RAG system:** Keyword scoring is not retrieval-augmented generation. A RAG system requires a vector database — embeddings, similarity search, grounded context injection. The first implementation had none of this and would not have qualified as the agentic RAG upgrade the project required.
 
-I identified these as critical violations and issued a precise correction: remove `anthropic`, integrate `langchain-google-genai` with `ChatGoogleGenerativeAI(model="gemini-3.0-flash")` and `GoogleGenerativeAIEmbeddings(model="models/text-embedding-004")`, replace the keyword loop with `Chroma.from_documents()` and `similarity_search`. The guardrail, Strategy modes, and Streamlit chat history logic were explicitly preserved.
+I identified these as critical violations and issued a precise correction: remove `anthropic`, integrate `langchain-google-genai` with `ChatGoogleGenerativeAI(model="gemini-3-flash-preview")` and `GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")`, replace the keyword loop with `Chroma.from_documents()` and `similarity_search`. The guardrail, Strategy modes, and Streamlit chat history logic were explicitly preserved.
 
 Claude executed the correction without modifying any of the preserved components, and the architectural intent remained intact.
 
@@ -181,20 +181,20 @@ The system has no way to express "I don't have a good match for this." Retrieval
 
 **What this means in practice:** the recommendations are most trustworthy when the user's query intersects a well-represented region of the catalog (lofi, pop, electronic) and least trustworthy at the edges. A production version would need either (a) a much larger catalog, (b) a confidence threshold that surfaces "no good match" rather than always returning *k*, or (c) explicit per-genre coverage warnings in the UI.
 
-### Embedding Bias — `text-embedding-004` Is Not Culturally Neutral
+### Embedding Bias — `gemini-embedding-001` Is Not Culturally Neutral
 
-The retrieval layer uses Google's `text-embedding-004` model. Like every contemporary embedding model, its training corpus is overwhelmingly English-language and Western-centric, which has direct consequences for what "semantic similarity" means inside this system.
+The retrieval layer uses Google's `gemini-embedding-001` model. Like every contemporary embedding model, its training corpus is overwhelmingly English-language and Western-centric, which has direct consequences for what "semantic similarity" means inside this system.
 
 Specific failure modes I expect:
 - **Non-English mood vocabulary collapses.** Concepts that English handles with multiple distinct words (e.g., the Portuguese *saudade*, the German *Sehnsucht*, the Japanese *mono no aware*) will likely embed near a generic "melancholic / nostalgic" cluster rather than retrieving songs whose moods carry those specific cultural shadings — even if the catalog had such songs (it does not).
 - **Genre label asymmetry.** "Lofi" and "synthwave" — internet-native, English-dominant subcultures — have rich embedding neighborhoods. "Reggaeton," "K-pop," "Afrobeats," and regional folk genres are embedded but with less internal differentiation, which means a query like "upbeat reggaeton" may not distinguish well between actual reggaeton tracks and other Latin-genre adjacent music.
 - **Cultural reference rot.** Phrases like "music for a dharma talk" or "ghazal vibes" depend on cultural context the embedding model under-represents. Similarity scores in those query regions are noisier and less meaningful.
 
-The catalog itself amplifies this — every song title and tag in `songs.csv` is in English. Even if `text-embedding-004` had perfectly balanced cross-lingual representations, the documents being retrieved would still be culturally narrow. The two biases compound rather than cancel.
+The catalog itself amplifies this — every song title and tag in `songs.csv` is in English. Even if `gemini-embedding-001` had perfectly balanced cross-lingual representations, the documents being retrieved would still be culturally narrow. The two biases compound rather than cancel.
 
 ### LLM Popularity Bias — Gemini Wants to Recommend Famous Artists
 
-Gemini 3.0 Flash was trained on a corpus where Taylor Swift, The Beatles, Drake, Beyoncé, Kendrick Lamar, and a few hundred other globally famous artists appear orders of magnitude more often than any artist in this catalog. This creates a statistical pressure that runs *against* the system's design intent.
+Gemini 3 Flash (Preview) was trained on a corpus where Taylor Swift, The Beatles, Drake, Beyoncé, Kendrick Lamar, and a few hundred other globally famous artists appear orders of magnitude more often than any artist in this catalog. This creates a statistical pressure that runs *against* the system's design intent.
 
 **The pressure manifests in two ways:**
 

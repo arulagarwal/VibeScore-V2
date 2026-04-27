@@ -12,7 +12,7 @@ VibeScore 1.0 (Module 3) was a rule-based, CLI recommender. It scored every song
 |---|---|---|
 | Input | Structured `UserProfile` dict | Free-text natural language |
 | Retrieval | Hand-crafted numeric scoring | Semantic vector search (ChromaDB) |
-| AI layer | None | Google Gemini 3.0 Flash (LLM) |
+| AI layer | None | Google Gemini 3 Flash (Preview) (LLM) |
 | Memory | Stateless CLI | Multi-turn Streamlit chat session |
 | Hallucination control | N/A — math can't hallucinate | `HallucinationGuardrail` cross-checks every title |
 | Interface | Terminal table | Streamlit chat UI with mode selector |
@@ -23,7 +23,7 @@ The core `songs.csv` catalog and the Strategy pattern concept both carry forward
 
 ## Agentic Workflow — Gemini as a Semantic DJ
 
-VibeScore 2.0 treats Gemini 3.0 Flash as a **Semantic DJ**: it does not just filter a list, it plans and curates a playlist by reasoning about the emotional arc, energy curve, and genre blend of a set of candidate songs.
+VibeScore 2.0 treats Gemini 3 Flash (Preview) as a **Semantic DJ**: it does not just filter a list, it plans and curates a playlist by reasoning about the emotional arc, energy curve, and genre blend of a set of candidate songs.
 
 The full pipeline on every user message:
 
@@ -38,7 +38,7 @@ User vibe (natural language)
   Top-k grounded candidates injected into system prompt
         │
         ▼
-  Gemini 3.0 Flash (LLM)
+  Gemini 3 Flash (Preview) (LLM)
   — reads CATALOG CONTEXT
   — reasons about mood, energy, valence, danceability
   — writes playlist with explanations
@@ -87,13 +87,13 @@ Because the guardrail reads from the same CSV that the vector store was built fr
 vibescore-v2/
 ├── app.py                  # Streamlit UI only — no logic
 ├── src/
-│   ├── agent_system.py     # SongKnowledgeBase, VibeScoreAgent,
-│   │                       # HallucinationGuardrail, ScoringModeConfig
-│   └── recommender.py      # VibeScore 1.0 core (Song, load_songs, strategies)
+│   └── agent_system.py     # SongKnowledgeBase, VibeScoreAgent,
+│                           # HallucinationGuardrail, ScoringModeConfig
 ├── data/
 │   └── songs.csv           # 20-song catalog — ground truth for guardrail
+├── assets/                 # architecture diagram + UI screenshots
 ├── tests/
-│   └── test_recommender.py
+│   └── test_guardrail.py
 └── requirements.txt
 ```
 
@@ -136,7 +136,7 @@ The app opens in your browser. Enter your Gemini API key on the landing screen �
 pytest tests/
 ```
 
-The test suite covers the VibeScore 1.0 scoring and recommendation logic in `src/recommender.py`. All 2 tests should pass.
+The test suite covers the HallucinationGuardrail in src/agent_system.py. Both tests should pass.
 
 ---
 
@@ -157,17 +157,21 @@ The test suite covers the VibeScore 1.0 scoring and recommendation logic in `src
 *Figure 2: Multi-step observable workflow and natural language interaction.*
 
 ### 3. Deep Dive & Debugging
-![Debug Info](assets/screenshot_debug.jpg)
+![Debug Info](assets/screenshot_debug.png)
 *Figure 3: Full transparency into ChromaDB retrieval and attribute analysis.*
 
 ### 4. Reliability Guardrail
-![Guardrail Note](assets/screenshot_guardrail.jpg)
+![Guardrail Note](assets/screenshot_guardrail.png)
 *Figure 4: Automated conflict detection against the songs.csv ground truth.*
+
+### 5. Deep Dive Mode
+![Deep Dive](assets/screenshot_deepdive.png)
+*Figure 5: Deep Dive mode — k=10 retrieval with artist-diversity re-ranking and rich attribute analysis.*
 
 ## Architecture Decisions
 ![System Architecture](assets/architecture.png)
 **Why ChromaDB over keyword scoring?**
-VibeScore 1.0's scoring loop required exact string matches for genre and mood. A user asking for "something melancholic and cinematic" would score zero against the `mood=moody` tag. ChromaDB with `text-embedding-004` embeddings maps both the query and the song metadata into the same vector space, so semantic proximity drives retrieval instead of string equality.
+VibeScore 1.0's scoring loop required exact string matches for genre and mood. A user asking for "something melancholic and cinematic" would score zero against the `mood=moody` tag. ChromaDB with `gemini-embedding-001` embeddings maps both the query and the song metadata into the same vector space, so semantic proximity drives retrieval instead of string equality.
 
 **Why keep the Strategy pattern?**
 The original Strategy pattern encoded "which features matter most" as swappable scoring weights. In 2.0, the same abstraction encodes "how should the Semantic DJ reason and how many candidates should it see." The pattern is a natural fit for both problems — it keeps mode-specific behavior isolated and makes adding new modes (e.g., a `WorkoutMode` with high-energy bias) a single class addition.
